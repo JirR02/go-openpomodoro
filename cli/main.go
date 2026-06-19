@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/open-pomodoro/go-openpomodoro"
+	"github.com/JirR02/go-openpomodoro"
 )
 
 func main() {

@@ -47,6 +47,6 @@ func (s *Settings) SetDefaults(d *Settings) {
 
 // UnmarshalText updates settings by parsing each key/value pair in logfmt.
 func (s *Settings) UnmarshalText(b []byte) error {
-	b = bytes.Replace(b, charNewline, charSpace, -1)
+	b = bytes.ReplaceAll(b, charNewline, charSpace)
 	return logfmt.Unmarshal(b, s)
 }

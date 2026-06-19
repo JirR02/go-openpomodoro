@@ -2,12 +2,12 @@ package openpomodoro
 
 import (
 	"bytes"
-	"io/ioutil"
 	"os"
 	"os/user"
 	"path"
 	"path/filepath"
 	"sort"
+	"time"
 )
 
 // Client holds the location of the directory and files.
@@ -90,7 +90,7 @@ func (c *Client) CurrentState() (*State, error) {
 func (c *Client) History() (*History, error) {
 	ps := []*Pomodoro{}
 
-	b, err := ioutil.ReadFile(c.HistoryFile)
+	b, err := os.ReadFile(c.HistoryFile)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &History{Pomodoros: ps}, nil
@@ -106,7 +106,9 @@ func (c *Client) History() (*History, error) {
 		}
 
 		p := NewPomodoro()
-		p.UnmarshalText(line)
+		if err := p.UnmarshalText(line); err != nil {
+			return nil, err
+		}
 		ps = append(ps, p)
 	}
 
@@ -115,7 +117,7 @@ func (c *Client) History() (*History, error) {
 
 // Pomodoro returns the current Pomodoro from the `current` file.
 func (c *Client) Pomodoro() (*Pomodoro, error) {
-	b, err := ioutil.ReadFile(c.CurrentFile)
+	b, err := os.ReadFile(c.CurrentFile)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return EmptyPomodoro(), nil
@@ -128,7 +130,9 @@ func (c *Client) Pomodoro() (*Pomodoro, error) {
 	}
 
 	p := NewPomodoro()
-	p.UnmarshalText(b)
+	if err := p.UnmarshalText(b); err != nil {
+		return nil, err
+	}
 
 	return p, nil
 }
@@ -188,6 +192,55 @@ func (c *Client) Start(p *Pomodoro) error {
 	return nil
 }
 
+// Pause pauses a Pomodoro by recording the pause time to persist it to
+// the `current` file
+func (c *Client) Pause() error {
+	err := c.ensureDirectory()
+	if err != nil {
+		return err
+	}
+
+	p, err := c.Pomodoro()
+	if err != nil {
+		return err
+	}
+
+	if p.IsActive() {
+		p.PauseTime = timeFunc()
+	}
+
+	if err := c.writeCurrent(p); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Resume ends the current pause by adding the elapsed pause time to PauseDuration,
+// clears PauseTime, and persists the updated pomodoro to the current file.
+func (c *Client) Resume() error {
+	err := c.ensureDirectory()
+	if err != nil {
+		return err
+	}
+
+	p, err := c.Pomodoro()
+	if err != nil {
+		return err
+	}
+
+	if p.IsPaused() {
+		p.PauseDuration += timeFunc().Sub(p.PauseTime)
+		p.PauseTime = time.Time{}
+	}
+
+	if err := c.writeCurrent(p); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // Finish ends the current Pomodoro by emptying the `current` file, and appending
 // the `history` with the final duration.
 func (c *Client) Finish() error {
@@ -201,7 +254,7 @@ func (c *Client) Finish() error {
 		return err
 	}
 
-	p.Duration = timeFunc().Sub(p.StartTime)
+	p.Duration = timeFunc().Sub(p.StartTime) - p.PauseDuration
 	return c.updateHistory(p)
 }
 
@@ -256,7 +309,7 @@ func (c *Client) writeCurrent(p *Pomodoro) error {
 		}
 	}
 
-	return ioutil.WriteFile(c.CurrentFile, b, FilePerm)
+	return os.WriteFile(c.CurrentFile, b, FilePerm)
 }
 
 func (c *Client) appendHistory(p *Pomodoro) error {
@@ -265,14 +318,17 @@ func (c *Client) appendHistory(p *Pomodoro) error {
 	}
 
 	b, err := p.MarshalText()
+	if err != nil {
+		return err
+	}
 
-	b = bytes.Replace(b, charNewline, charSpace, -1)
+	b = bytes.ReplaceAll(b, charNewline, charSpace)
 
 	f, err := os.OpenFile(c.HistoryFile, os.O_WRONLY|os.O_APPEND|os.O_CREATE, FilePerm)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	_, err = f.Write(b)
 	if err != nil {
@@ -313,11 +369,11 @@ func (c *Client) writeHistory(h *History) error {
 		return err
 	}
 
-	return ioutil.WriteFile(c.HistoryFile, b, FilePerm)
+	return os.WriteFile(c.HistoryFile, b, FilePerm)
 }
 
 func (c *Client) readSettings() (*Settings, error) {
-	b, err := ioutil.ReadFile(c.SettingsFile)
+	b, err := os.ReadFile(c.SettingsFile)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return nil, err

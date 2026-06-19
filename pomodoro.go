@@ -34,6 +34,18 @@ type Pomodoro struct {
 	// duration in minutes.
 	JSONDuration int `json:"duration"`
 
+	// PauseTime is the time the Pomodoro paused.
+	PauseTime time.Time `json:"-"`
+	// JSONPauseTime is a placeholder for MarshalJSON to convert and store the
+	// time as a string.
+	JSONPauseTime string `logfmt:"pause_time,omitempty" json:"pause_time,omitempty"`
+
+	// PauseDuration is the length of the Pause.
+	PauseDuration time.Duration `logfmt:"pause_duration,m" json:"-"`
+	// JSONDuration is a placeholder for MarshalJSON to convert and store the
+	// duration in minutes.
+	JSONPauseDuration int `json:"pause_duration,omitempty"`
+
 	// Tags are the list of tags for this Pomodoro.
 	Tags []string `logfmt:"tags" json:"tags"`
 }
@@ -68,6 +80,14 @@ func (p Pomodoro) MarshalJSON() ([]byte, error) {
 	// encoding.TextMarshaler via MarshalText.
 	type alias Pomodoro
 	p.JSONDuration = p.DurationMinutes()
+	p.JSONPauseDuration = int(p.PauseDuration.Minutes())
+
+	if !p.PauseTime.IsZero() {
+		p.JSONPauseTime = p.PauseTime.Format(TimeFormat)
+	} else {
+		p.JSONPauseTime = ""
+	}
+
 	return json.Marshal((alias)(p))
 }
 
@@ -75,6 +95,13 @@ func (p Pomodoro) MarshalJSON() ([]byte, error) {
 // string.
 func (p Pomodoro) MarshalText() ([]byte, error) {
 	timestamp := []byte(p.StartTime.Format(TimeFormat))
+
+	if !p.PauseTime.IsZero() {
+		p.JSONPauseTime = p.PauseTime.Format(TimeFormat)
+	} else {
+		p.JSONPauseTime = ""
+	}
+
 	attributes, err := logfmt.Encode(p)
 	if err != nil {
 		return nil, err
@@ -123,6 +150,15 @@ func (p *Pomodoro) UnmarshalText(b []byte) error {
 		return err
 	}
 
+	if p.JSONPauseTime != "" {
+		pauseTime, err := time.Parse(TimeFormat, p.JSONPauseTime)
+		if err != nil {
+			return err
+		}
+		p.PauseTime = pauseTime
+		p.JSONPauseTime = ""
+	}
+
 	return nil
 }
 
@@ -145,17 +181,18 @@ func (p *Pomodoro) DurationMinutes() int {
 
 // EndTime returns the time the Pomodoro would end.
 func (p *Pomodoro) EndTime() time.Time {
-	return p.StartTime.Add(p.Duration)
+	totalDuration := p.Duration + p.PauseDuration
+	return p.StartTime.Add(totalDuration)
 }
 
 // IsActive returns whether or not a Pomodoro is active.
 func (p *Pomodoro) IsActive() bool {
-	return !p.IsInactive() && !p.IsDone()
+	return !p.IsInactive() && !p.IsPaused() && !p.IsDone()
 }
 
 // IsDone returns whether or not a Pomodoro was active and is now done.
 func (p *Pomodoro) IsDone() bool {
-	if p.IsInactive() {
+	if p.IsInactive() || p.IsPaused() {
 		return false
 	}
 	return timeFunc().After(p.EndTime())
@@ -166,10 +203,19 @@ func (p *Pomodoro) IsInactive() bool {
 	return p.StartTime.IsZero()
 }
 
+// IsPaused returns whether or not a Pomodoro is paused.
+func (p *Pomodoro) IsPaused() bool {
+	return !p.PauseTime.IsZero()
+}
+
 // Remaining returns the remaining duration of the Pomodoro.
 func (p *Pomodoro) Remaining() time.Duration {
 	if p.IsInactive() {
 		return time.Duration(0)
+	}
+
+	if p.IsPaused() {
+		return p.EndTime().Sub(p.PauseTime)
 	}
 
 	return p.EndTime().Sub(timeFunc())

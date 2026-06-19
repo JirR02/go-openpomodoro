@@ -25,29 +25,56 @@ func Test_Client(t *testing.T) {
 		Case{
 			Name: "typical pomodoro",
 			Steps: []Step{
-				assertActive(false), assertDone(false), assertInactive(true),
+				assertActive(false), assertDone(false), assertInactive(true), assertIsPaused(false),
 
 				start(&Pomodoro{}),
-				assertActive(true), assertDone(false), assertInactive(false),
+				assertActive(true), assertDone(false), assertInactive(false), assertIsPaused(false),
 				assertMinutesRemaining(25),
 				assertHistoryLength(1),
 
 				timeTravel(1 * time.Minute),
 				assertMinutesRemaining(24),
 
-				timeTravel(23 * time.Minute),
+				pause(),
+				assertMinutesRemaining(24),
+				assertIsPaused(true),
+
+				timeTravel(5 * time.Minute),
+				assertMinutesRemaining(24),
+				assertIsPaused(true),
+
+				resume(),
+				assertPauseDuration(5),
+				assertMinutesRemaining(24),
+				assertActive(true), assertDone(false), assertInactive(false), assertIsPaused(false),
+
+				timeTravel(4 * time.Minute),
+				pause(),
+				assertMinutesRemaining(20),
+				assertIsPaused(true),
+
+				timeTravel(10 * time.Minute),
+				assertMinutesRemaining(20),
+				assertIsPaused(true),
+
+				resume(),
+				assertPauseDuration(15),
+				assertMinutesRemaining(20),
+				assertActive(true), assertDone(false), assertInactive(false), assertIsPaused(false),
+
+				timeTravel(19 * time.Minute),
 				assertMinutesRemaining(1),
 
 				timeTravel(1 * time.Minute),
 				assertMinutesRemaining(0),
-				assertActive(false), assertDone(true), assertInactive(false),
+				assertActive(false), assertDone(true), assertInactive(false), assertIsPaused(false),
 
 				timeTravel(1 * time.Minute),
 				assertMinutesRemaining(-1),
-				assertActive(false), assertDone(true), assertInactive(false),
+				assertActive(false), assertDone(true), assertInactive(false), assertIsPaused(false),
 
 				clear(),
-				assertActive(false), assertDone(false), assertInactive(true),
+				assertActive(false), assertDone(false), assertInactive(true), assertIsPaused(false),
 				assertMinutesRemaining(0),
 			},
 		},
@@ -56,15 +83,64 @@ func Test_Client(t *testing.T) {
 			Name: "finish early",
 			Steps: []Step{
 				start(&Pomodoro{}),
-				assertActive(true), assertDone(false), assertInactive(false),
+				assertActive(true), assertDone(false), assertInactive(false), assertIsPaused(false),
 				assertMinutesRemaining(25),
 				assertHistoryLength(1),
 
 				timeTravel(15 * time.Minute),
+				pause(),
+				assertIsPaused(true),
+				assertMinutesRemaining(10),
+
+				timeTravel(5 * time.Minute),
+				assertIsPaused(true),
 				assertMinutesRemaining(10),
 
 				end(),
-				assertActive(false), assertDone(false), assertInactive(true),
+				assertActive(false), assertDone(false), assertInactive(true), assertIsPaused(false),
+				assertHistoryLength(1),
+			},
+		},
+
+		Case{
+			Name: "pause while paused",
+			Steps: []Step{
+				start(&Pomodoro{}),
+				assertActive(true), assertDone(false), assertInactive(false), assertIsPaused(false),
+				assertMinutesRemaining(25),
+				assertHistoryLength(1),
+
+				timeTravel(15 * time.Minute),
+				pause(),
+				assertIsPaused(true),
+				assertMinutesRemaining(10),
+
+				timeTravel(5 * time.Minute),
+				pause(),
+				assertIsPaused(true),
+				assertMinutesRemaining(10),
+
+				end(),
+				assertActive(false), assertDone(false), assertInactive(true), assertIsPaused(false),
+				assertHistoryLength(1),
+			},
+		},
+
+		Case{
+			Name: "resume while not paused",
+			Steps: []Step{
+				start(&Pomodoro{}),
+				assertActive(true), assertDone(false), assertInactive(false), assertIsPaused(false),
+				assertMinutesRemaining(25),
+				assertHistoryLength(1),
+
+				timeTravel(15 * time.Minute),
+				resume(),
+				assertActive(true), assertDone(false), assertInactive(false), assertIsPaused(false),
+				assertMinutesRemaining(10),
+
+				end(),
+				assertActive(false), assertDone(false), assertInactive(true), assertIsPaused(false),
 				assertHistoryLength(1),
 			},
 		},
@@ -74,12 +150,12 @@ func Test_Client(t *testing.T) {
 			Steps: []Step{
 				start(&Pomodoro{}),
 				timeTravel(15 * time.Minute),
-				assertActive(true), assertDone(false), assertInactive(false),
+				assertActive(true), assertDone(false), assertInactive(false), assertIsPaused(false),
 				assertMinutesRemaining(10),
 				assertHistoryLength(1),
 
 				start(&Pomodoro{}),
-				assertActive(true), assertDone(false), assertInactive(false),
+				assertActive(true), assertDone(false), assertInactive(false), assertIsPaused(false),
 				assertMinutesRemaining(25),
 				assertHistoryLength(1),
 			},
@@ -90,11 +166,37 @@ func Test_Client(t *testing.T) {
 			Steps: []Step{
 				start(&Pomodoro{}),
 				timeTravel(30 * time.Minute),
-				assertActive(false), assertDone(true), assertInactive(false),
+				assertActive(false), assertDone(true), assertInactive(false), assertIsPaused(false),
 				assertHistoryLength(1),
 
 				start(&Pomodoro{}),
-				assertActive(true), assertDone(false), assertInactive(false),
+				assertActive(true), assertDone(false), assertInactive(false), assertIsPaused(false),
+				assertHistoryLength(2),
+			},
+		},
+
+		Case{
+			Name: "pause resume active/done",
+			Steps: []Step{
+				pause(),
+				assertActive(false), assertDone(false), assertInactive(true), assertIsPaused(false),
+
+				resume(),
+				assertActive(false), assertDone(false), assertInactive(true), assertIsPaused(false),
+
+				start(&Pomodoro{}),
+				timeTravel(30 * time.Minute),
+				assertActive(false), assertDone(true), assertInactive(false), assertIsPaused(false),
+				assertHistoryLength(1),
+
+				pause(),
+				assertActive(false), assertDone(true), assertInactive(false), assertIsPaused(false),
+
+				resume(),
+				assertActive(false), assertDone(true), assertInactive(false), assertIsPaused(false),
+
+				start(&Pomodoro{}),
+				assertActive(true), assertDone(false), assertInactive(false), assertIsPaused(false),
 				assertHistoryLength(2),
 			},
 		},
@@ -115,6 +217,20 @@ func Test_Client(t *testing.T) {
 func start(p *Pomodoro) Step {
 	return func(t *testing.T, c *Client, n string) {
 		err := c.Start(p)
+		require.Nil(t, err, n)
+	}
+}
+
+func pause() Step {
+	return func(t *testing.T, c *Client, n string) {
+		err := c.Pause()
+		require.Nil(t, err, n)
+	}
+}
+
+func resume() Step {
+	return func(t *testing.T, c *Client, n string) {
+		err := c.Resume()
 		require.Nil(t, err, n)
 	}
 }
@@ -142,7 +258,7 @@ func assertActive(b bool) Step {
 func assertDone(b bool) Step {
 	return func(t *testing.T, c *Client, n string) {
 		p, err := c.Pomodoro()
-		require.Nil(t, err)
+		require.Nil(t, err, n)
 		assert.Equal(t, b, p.IsDone(), n)
 	}
 }
@@ -155,11 +271,27 @@ func assertDuration(d int) Step {
 	}
 }
 
+func assertPauseDuration(d int) Step {
+	return func(t *testing.T, c *Client, n string) {
+		p, err := c.Pomodoro()
+		require.Nil(t, err)
+		assert.Equal(t, d, int(p.PauseDuration.Minutes()), n)
+	}
+}
+
 func assertInactive(b bool) Step {
 	return func(t *testing.T, c *Client, n string) {
 		p, err := c.Pomodoro()
 		require.Nil(t, err)
 		assert.Equal(t, b, p.IsInactive(), n)
+	}
+}
+
+func assertIsPaused(b bool) Step {
+	return func(t *testing.T, c *Client, n string) {
+		p, err := c.Pomodoro()
+		require.Nil(t, err)
+		assert.Equal(t, b, p.IsPaused(), n)
 	}
 }
 
