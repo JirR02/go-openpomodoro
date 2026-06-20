@@ -255,6 +255,11 @@ func (c *Client) Finish() error {
 	}
 
 	p.Duration = timeFunc().Sub(p.StartTime) - p.PauseDuration
+
+	if p.Duration < time.Minute {
+		p.Duration = time.Minute
+	}
+
 	return c.updateHistory(p)
 }
 
