@@ -1,8 +1,8 @@
 package openpomodoro
 
 import (
-	"io/ioutil"
 	"log"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -29,53 +29,53 @@ func Test_Client(t *testing.T) {
 
 				start(&Pomodoro{}),
 				assertActive(true), assertDone(false), assertInactive(false), assertIsPaused(false),
-				assertMinutesRemaining(25),
+				assertSecondsRemaining(1500),
 				assertHistoryLength(1),
 
 				timeTravel(1 * time.Minute),
-				assertMinutesRemaining(24),
+				assertSecondsRemaining(1440),
 
 				pause(),
-				assertMinutesRemaining(24),
+				assertSecondsRemaining(1440),
 				assertIsPaused(true),
 
 				timeTravel(5 * time.Minute),
-				assertMinutesRemaining(24),
+				assertSecondsRemaining(1440),
 				assertIsPaused(true),
 
 				resume(),
-				assertPauseDuration(5),
-				assertMinutesRemaining(24),
+				assertPauseDuration(300),
+				assertSecondsRemaining(1440),
 				assertActive(true), assertDone(false), assertInactive(false), assertIsPaused(false),
 
 				timeTravel(4 * time.Minute),
 				pause(),
-				assertMinutesRemaining(20),
+				assertSecondsRemaining(1200),
 				assertIsPaused(true),
 
 				timeTravel(10 * time.Minute),
-				assertMinutesRemaining(20),
+				assertSecondsRemaining(1200),
 				assertIsPaused(true),
 
 				resume(),
-				assertPauseDuration(15),
-				assertMinutesRemaining(20),
+				assertPauseDuration(900),
+				assertSecondsRemaining(1200),
 				assertActive(true), assertDone(false), assertInactive(false), assertIsPaused(false),
 
 				timeTravel(19 * time.Minute),
-				assertMinutesRemaining(1),
+				assertSecondsRemaining(60),
 
 				timeTravel(1 * time.Minute),
-				assertMinutesRemaining(0),
+				assertSecondsRemaining(0),
 				assertActive(false), assertDone(true), assertInactive(false), assertIsPaused(false),
 
 				timeTravel(1 * time.Minute),
-				assertMinutesRemaining(-1),
+				assertSecondsRemaining(-60),
 				assertActive(false), assertDone(true), assertInactive(false), assertIsPaused(false),
 
 				clear(),
 				assertActive(false), assertDone(false), assertInactive(true), assertIsPaused(false),
-				assertMinutesRemaining(0),
+				assertSecondsRemaining(0),
 			},
 		},
 
@@ -84,20 +84,20 @@ func Test_Client(t *testing.T) {
 			Steps: []Step{
 				start(&Pomodoro{}),
 				assertActive(true), assertDone(false), assertInactive(false), assertIsPaused(false),
-				assertMinutesRemaining(25),
+				assertSecondsRemaining(1500),
 				assertHistoryLength(1),
 
 				timeTravel(15 * time.Minute),
 				pause(),
 				assertIsPaused(true),
-				assertMinutesRemaining(10),
+				assertSecondsRemaining(600),
 
 				timeTravel(5 * time.Minute),
 				assertIsPaused(true),
-				assertMinutesRemaining(10),
+				assertSecondsRemaining(600),
 
 				end(),
-				assertActive(false), assertDone(false), assertInactive(true), assertIsPaused(false),
+				assertActive(false), assertDone(true), assertInactive(false), assertIsPaused(false),
 				assertHistoryLength(1),
 			},
 		},
@@ -107,21 +107,21 @@ func Test_Client(t *testing.T) {
 			Steps: []Step{
 				start(&Pomodoro{}),
 				assertActive(true), assertDone(false), assertInactive(false), assertIsPaused(false),
-				assertMinutesRemaining(25),
+				assertSecondsRemaining(1500),
 				assertHistoryLength(1),
 
 				timeTravel(15 * time.Minute),
 				pause(),
 				assertIsPaused(true),
-				assertMinutesRemaining(10),
+				assertSecondsRemaining(600),
 
 				timeTravel(5 * time.Minute),
 				pause(),
 				assertIsPaused(true),
-				assertMinutesRemaining(10),
+				assertSecondsRemaining(600),
 
 				end(),
-				assertActive(false), assertDone(false), assertInactive(true), assertIsPaused(false),
+				assertActive(false), assertDone(true), assertInactive(false), assertIsPaused(false),
 				assertHistoryLength(1),
 			},
 		},
@@ -131,16 +131,16 @@ func Test_Client(t *testing.T) {
 			Steps: []Step{
 				start(&Pomodoro{}),
 				assertActive(true), assertDone(false), assertInactive(false), assertIsPaused(false),
-				assertMinutesRemaining(25),
+				assertSecondsRemaining(1500),
 				assertHistoryLength(1),
 
 				timeTravel(15 * time.Minute),
 				resume(),
 				assertActive(true), assertDone(false), assertInactive(false), assertIsPaused(false),
-				assertMinutesRemaining(10),
+				assertSecondsRemaining(600),
 
 				end(),
-				assertActive(false), assertDone(false), assertInactive(true), assertIsPaused(false),
+				assertActive(false), assertDone(true), assertInactive(false), assertIsPaused(false),
 				assertHistoryLength(1),
 			},
 		},
@@ -151,12 +151,12 @@ func Test_Client(t *testing.T) {
 				start(&Pomodoro{}),
 				timeTravel(15 * time.Minute),
 				assertActive(true), assertDone(false), assertInactive(false), assertIsPaused(false),
-				assertMinutesRemaining(10),
+				assertSecondsRemaining(600),
 				assertHistoryLength(1),
 
 				start(&Pomodoro{}),
 				assertActive(true), assertDone(false), assertInactive(false), assertIsPaused(false),
-				assertMinutesRemaining(25),
+				assertSecondsRemaining(1500),
 				assertHistoryLength(1),
 			},
 		},
@@ -200,10 +200,39 @@ func Test_Client(t *testing.T) {
 				assertHistoryLength(2),
 			},
 		},
+
+		Case{
+			Name: "break lifecycle and unpausable",
+			Steps: []Step{
+				assertActive(false), assertDone(false), assertInactive(true), assertIsPaused(false),
+
+				startBreak(&Pomodoro{}),
+				assertActive(true), assertDone(false), assertInactive(false), assertIsPaused(false),
+				assertIsBreak(true),
+				assertSecondsRemaining(300),
+				assertHistoryLength(0),
+
+				timeTravel(2 * time.Minute),
+				assertSecondsRemaining(180),
+
+				pause(),
+				assertIsPaused(false),
+				assertSecondsRemaining(180),
+
+				resume(),
+				assertIsPaused(false),
+				assertActive(true),
+
+				timeTravel(3 * time.Minute),
+				assertSecondsRemaining(0),
+				assertActive(false), assertDone(true), assertInactive(false), assertIsPaused(false),
+				assertHistoryLength(0),
+			},
+		},
 	}
 
 	for _, tc := range cases {
-		timeFunc = time.Now
+		timeFunc = func() time.Time { return time.Now().Truncate(time.Second) }
 
 		c, err := NewClient(fixture(tc.Fixture))
 		require.Nil(t, err)
@@ -235,6 +264,21 @@ func resume() Step {
 	}
 }
 
+func startBreak(p *Pomodoro) Step {
+	return func(t *testing.T, c *Client, n string) {
+		err := c.Break(p)
+		require.Nil(t, err, n)
+	}
+}
+
+func assertIsBreak(b bool) Step {
+	return func(t *testing.T, c *Client, n string) {
+		p, err := c.Pomodoro()
+		require.Nil(t, err, n)
+		assert.Equal(t, b, p.IsBreak, n)
+	}
+}
+
 func clear() Step {
 	return func(t *testing.T, c *Client, n string) {
 		require.Nil(t, c.Clear(), n)
@@ -263,19 +307,11 @@ func assertDone(b bool) Step {
 	}
 }
 
-func assertDuration(d int) Step {
-	return func(t *testing.T, c *Client, n string) {
-		p, err := c.Pomodoro()
-		require.Nil(t, err)
-		assert.Equal(t, d, p.DurationMinutes(), n)
-	}
-}
-
 func assertPauseDuration(d int) Step {
 	return func(t *testing.T, c *Client, n string) {
 		p, err := c.Pomodoro()
 		require.Nil(t, err)
-		assert.Equal(t, d, int(p.PauseDuration.Minutes()), n)
+		assert.Equal(t, d, int(p.PauseDuration.Seconds()), n)
 	}
 }
 
@@ -302,11 +338,11 @@ func assertHistoryLength(i int) Step {
 		assert.Equal(t, i, len(h.Pomodoros), n)
 	}
 }
-func assertMinutesRemaining(m int) Step {
+func assertSecondsRemaining(m int) Step {
 	return func(t *testing.T, c *Client, n string) {
 		p, err := c.Pomodoro()
 		require.Nil(t, err)
-		assert.Equal(t, m, round(p.Remaining().Minutes()), n)
+		assert.Equal(t, m, p.RemainingSeconds(), n)
 	}
 }
 
@@ -446,7 +482,7 @@ func Test_Finish_active(t *testing.T) {
 
 	current, err := c.Pomodoro()
 	require.Nil(t, err)
-	assert.True(t, current.IsInactive())
+	assert.False(t, current.IsInactive())
 }
 
 func Test_Finish_inactive(t *testing.T) {
@@ -499,7 +535,7 @@ func Test_Cancel_finished(t *testing.T) {
 
 	current, err := c.Pomodoro()
 	require.Nil(t, err)
-	assert.True(t, current.IsInactive())
+	assert.False(t, current.IsInactive())
 
 	history, err := c.History()
 	require.Nil(t, err)
@@ -515,7 +551,7 @@ func Test_Cancel_inactive(t *testing.T) {
 }
 
 func fixture(f string) string {
-	tmpDir, err := ioutil.TempDir("", f)
+	tmpDir, err := os.MkdirTemp("", f)
 	if err != nil {
 		log.Fatal(err)
 	}

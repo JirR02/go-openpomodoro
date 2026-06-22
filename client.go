@@ -98,9 +98,9 @@ func (c *Client) History() (*History, error) {
 		return nil, err
 	}
 
-	lines := bytes.Split(b, charNewline)
+	lines := bytes.SplitSeq(b, charNewline)
 
-	for _, line := range lines {
+	for line := range lines {
 		if bytesAllWhitespace(line) {
 			continue
 		}
@@ -205,6 +205,10 @@ func (c *Client) Pause() error {
 		return err
 	}
 
+	if p.IsBreak {
+		return nil
+	}
+
 	if p.IsActive() {
 		p.PauseTime = timeFunc()
 	}
@@ -229,6 +233,10 @@ func (c *Client) Resume() error {
 		return err
 	}
 
+	if p.IsBreak {
+		return nil
+	}
+
 	if p.IsPaused() {
 		p.PauseDuration += timeFunc().Sub(p.PauseTime)
 		p.PauseTime = time.Time{}
@@ -249,18 +257,24 @@ func (c *Client) Finish() error {
 		return err
 	}
 
-	err = c.Clear()
-	if err != nil {
-		return err
+	if p.IsPaused() {
+		p.PauseDuration += timeFunc().Sub(p.PauseTime)
+		p.PauseTime = time.Time{}
 	}
 
 	p.Duration = timeFunc().Sub(p.StartTime) - p.PauseDuration
 
-	if p.Duration < time.Minute {
-		p.Duration = time.Minute
+	if !p.IsBreak {
+		if err := c.updateHistory(p); err != nil {
+			return err
+		}
 	}
 
-	return c.updateHistory(p)
+	if err := c.writeCurrent(p); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Cancel cancels any current Pomodoro by emptying the `current` file, and
@@ -276,7 +290,7 @@ func (c *Client) Cancel() error {
 		return err
 	}
 
-	if p.IsInactive() {
+	if p.IsInactive() || p.IsDone() {
 		return nil
 	}
 
@@ -285,7 +299,10 @@ func (c *Client) Cancel() error {
 		return err
 	}
 
-	return c.deleteHistory(p)
+	if !p.IsBreak {
+		return c.deleteHistory(p)
+	}
+	return nil
 }
 
 // Clear clears the current Pomodoro by emptying the `current` file.
@@ -317,8 +334,15 @@ func (c *Client) writeCurrent(p *Pomodoro) error {
 	return os.WriteFile(c.CurrentFile, b, FilePerm)
 }
 
+// Break starts a break by writing the current timestamp along with
+// configured defaults and the break status to the `current` file.
+func (c *Client) Break(p *Pomodoro) error {
+	p.IsBreak = true
+	return c.Start(p)
+}
+
 func (c *Client) appendHistory(p *Pomodoro) error {
-	if p.IsInactive() {
+	if p.IsInactive() || p.IsBreak {
 		return nil
 	}
 

@@ -26,7 +26,7 @@ func TestPomodoro_MarshalJSON(t *testing.T) {
 	b, err := p.MarshalJSON()
 	assert.Nil(t, err)
 	assert.Equal(t,
-		`{"start_time":"2016-06-14T12:00:00Z","description":"A description","duration":25,"tags":["a","b"]}`,
+		`{"start_time":"2016-06-14T12:00:00Z","description":"A description","duration":"25m0s","tags":["a","b"]}`,
 		string(b))
 }
 
@@ -42,7 +42,7 @@ func TestPomodoro_MarshalJSON_WithPause(t *testing.T) {
 	b, err := p.MarshalJSON()
 	assert.Nil(t, err)
 	assert.Equal(t,
-		`{"start_time":"2016-06-14T12:00:00Z","description":"A description","duration":25,"pause_time":"2016-06-14T12:10:00Z","pause_duration":5,"tags":["a","b"]}`,
+		`{"start_time":"2016-06-14T12:00:00Z","description":"A description","duration":"25m0s","pause_time":"2016-06-14T12:10:00Z","pause_duration":"5m0s","tags":["a","b"]}`,
 		string(b))
 }
 
@@ -56,7 +56,7 @@ func TestPomodoro_MarshalText(t *testing.T) {
 	b, err := p.MarshalText()
 	assert.Nil(t, err)
 	assert.Equal(t,
-		"2016-06-14T12:00:00Z description=\"A description\" duration=25 tags=a,b",
+		"2016-06-14T12:00:00Z description=\"A description\" duration=25m0s tags=a,b",
 		string(b))
 }
 
@@ -72,7 +72,7 @@ func TestPomodoro_MarshalText_WithPause(t *testing.T) {
 	b, err := p.MarshalText()
 	assert.Nil(t, err)
 	assert.Equal(t,
-		"2016-06-14T12:00:00Z description=\"A description\" duration=25 pause_time=2016-06-14T12:10:00Z pause_duration=5 tags=a,b",
+		"2016-06-14T12:00:00Z description=\"A description\" duration=25m0s pause_time=2016-06-14T12:10:00Z pause_duration=5m0s tags=a,b",
 		string(b))
 }
 
@@ -107,7 +107,7 @@ func Test_MarshalText(t *testing.T) {
 		StartTime: timestamp,
 		Duration:  25 * time.Minute,
 	}
-	expected = `2026-06-14T12:34:56-04:00 duration=25`
+	expected = `2026-06-14T12:34:56-04:00 duration=25m0s`
 	actual, err = p.MarshalText()
 	require.Nil(t, err)
 	assert.Equal(t, expected, string(actual))
@@ -118,7 +118,7 @@ func Test_MarshalText(t *testing.T) {
 		Description: "working on stuff",
 		Tags:        []string{"work", "stuff"},
 	}
-	expected = `2026-06-14T12:34:56-04:00 description="working on stuff" duration=25 tags=work,stuff`
+	expected = `2026-06-14T12:34:56-04:00 description="working on stuff" duration=25m0s tags=work,stuff`
 	actual, err = p.MarshalText()
 	require.Nil(t, err)
 	assert.Equal(t, expected, string(actual))
@@ -134,7 +134,17 @@ func Test_MarshalText(t *testing.T) {
 		Description:   "working on stuff",
 		Tags:          []string{"work", "stuff"},
 	}
-	expected = `2026-06-14T12:34:56-04:00 description="working on stuff" duration=25 pause_time=2026-06-14T12:44:56-04:00 pause_duration=5 tags=work,stuff`
+	expected = `2026-06-14T12:34:56-04:00 description="working on stuff" duration=25m0s pause_time=2026-06-14T12:44:56-04:00 pause_duration=5m0s tags=work,stuff`
+	actual, err = p.MarshalText()
+	require.Nil(t, err)
+	assert.Equal(t, expected, string(actual))
+
+	p = &Pomodoro{
+		StartTime: timestamp,
+		Duration:  10 * time.Minute,
+		IsBreak:   true,
+	}
+	expected = `2026-06-14T12:34:56-04:00 duration=10m0s is_break=true`
 	actual, err = p.MarshalText()
 	require.Nil(t, err)
 	assert.Equal(t, expected, string(actual))
@@ -167,7 +177,7 @@ func Test_UnmarshalText_timeOnlyWithNewline(t *testing.T) {
 
 func Test_UnmarshalText_singleLineAttributes(t *testing.T) {
 	p := &Pomodoro{}
-	err := p.UnmarshalText([]byte(`2026-06-14T12:34:56-04:00 description="working on stuff" duration=25 tags=work,stuff`))
+	err := p.UnmarshalText([]byte(`2026-06-14T12:34:56-04:00 description="working on stuff" duration=25m0s tags=work,stuff`))
 	require.Nil(t, err)
 
 	startTime, err := time.Parse(TimeFormat, "2026-06-14T12:34:56-04:00")
@@ -184,7 +194,7 @@ func Test_UnmarshalText_singleLineAttributes(t *testing.T) {
 
 func Test_UnmarshalText_PauseAttributes(t *testing.T) {
 	p := &Pomodoro{}
-	err := p.UnmarshalText([]byte(`2026-06-14T12:34:56-04:00 description="working on stuff" duration=25 pause_time="2026-06-14T12:44:56-04:00" pause_duration=5 tags=work,stuff`))
+	err := p.UnmarshalText([]byte(`2026-06-14T12:34:56-04:00 description="working on stuff" duration=25m0s pause_time=2026-06-14T12:44:56-04:00 pause_duration=5m0s tags=work,stuff`))
 	require.Nil(t, err)
 
 	startTime, err := time.Parse(TimeFormat, "2026-06-14T12:34:56-04:00")
@@ -221,8 +231,8 @@ func Test_UnmarshalText_whitespace(t *testing.T) {
 
 func Test_UnmarshalText_multipleEntries(t *testing.T) {
 	p := &Pomodoro{}
-	err := p.UnmarshalText([]byte(`2026-06-14T12:34:56-04:00 description="working on stuff" duration=25 tags=work,stuff
-2026-06-14T12:34:56-04:00 description="working on stuff" duration=25 tags=work,stuff`))
+	err := p.UnmarshalText([]byte(`2026-06-14T12:34:56-04:00 description="working on stuff" duration=25m0s tags=work,stuff
+2026-06-14T12:34:56-04:00 description="working on stuff" duration=25m0s tags=work,stuff`))
 	assert.Error(t, err)
 }
 
@@ -257,17 +267,66 @@ func Test_ApplySettings_existing(t *testing.T) {
 	assert.Equal(t, p.Tags, []string{"play"})
 }
 
-func Test_DurationMinutes(t *testing.T) {
+func TestPomodoro_MarshalJSON_Break(t *testing.T) {
+	p := &Pomodoro{
+		StartTime:   time.Date(2016, 06, 14, 12, 0, 0, 0, time.UTC),
+		Duration:    10 * time.Minute,
+		IsBreak:     true,
+		Tags:        []string{"rest"},
+		Description: "Coffee break",
+	}
+	b, err := p.MarshalJSON()
+	assert.Nil(t, err)
+	assert.Equal(t,
+		`{"start_time":"2016-06-14T12:00:00Z","description":"Coffee break","duration":"10m0s","is_break":true,"tags":["rest"]}`,
+		string(b))
+}
+
+func TestPomodoro_MarshalText_Break(t *testing.T) {
+	p := &Pomodoro{
+		StartTime:   time.Date(2016, 06, 14, 12, 0, 0, 0, time.UTC),
+		Duration:    10 * time.Minute,
+		IsBreak:     true,
+		Tags:        []string{"rest"},
+		Description: "Coffee break",
+	}
+	b, err := p.MarshalText()
+	assert.Nil(t, err)
+	assert.Equal(t,
+		"2016-06-14T12:00:00Z description=\"Coffee break\" duration=10m0s is_break=true tags=rest",
+		string(b))
+}
+
+func Test_UnmarshalText_Break(t *testing.T) {
+	p := &Pomodoro{}
+	err := p.UnmarshalText([]byte(`2026-06-14T12:34:56-04:00 description="Coffee break" duration=10m0s is_break=true tags=rest`))
+	require.Nil(t, err)
+
+	startTime, err := time.Parse(TimeFormat, "2026-06-14T12:34:56-04:00")
+	require.Nil(t, err)
+
+	expected := &Pomodoro{
+		StartTime:   startTime,
+		Description: "Coffee break",
+		Duration:    10 * time.Minute,
+		IsBreak:     true,
+		Tags:        []string{"rest"},
+	}
+
+	assert.Equal(t, expected, p)
+}
+
+func Test_DurationSeconds(t *testing.T) {
 	p := Pomodoro{}
 
 	p.Duration = 30 * time.Minute
-	assert.Equal(t, 30, p.DurationMinutes())
+	assert.Equal(t, 1800, p.DurationSeconds())
 
 	p.Duration = 29*time.Minute + 30*time.Second
-	assert.Equal(t, 30, p.DurationMinutes())
+	assert.Equal(t, 1770, p.DurationSeconds())
 
 	p.Duration = 29*time.Minute + 29*time.Second
-	assert.Equal(t, 29, p.DurationMinutes())
+	assert.Equal(t, 1769, p.DurationSeconds())
 }
 
 func Test_EndTime(t *testing.T) {
@@ -403,34 +462,34 @@ func Test_Remaining(t *testing.T) {
 	p.PauseTime = time.Time{}
 }
 
-func Test_RemainingMinutes(t *testing.T) {
+func Test_RemainingSeconds(t *testing.T) {
 	p := NewPomodoro()
 	p.Duration = 25 * time.Minute
 
-	assert.Equal(t, 0, p.RemainingMinutes())
+	assert.Equal(t, 0, p.RemainingSeconds())
 
 	cases := map[time.Duration]int{
-		0 * time.Minute:  25,
-		1 * time.Minute:  24,
-		24 * time.Minute: 1,
+		0 * time.Minute:  1500,
+		1 * time.Minute:  1440,
+		24 * time.Minute: 60,
 		25 * time.Minute: 0,
-		26 * time.Minute: -1,
+		26 * time.Minute: -60,
 
-		29 * time.Second:                25,
-		30 * time.Second:                24,
-		24*time.Minute + 29*time.Second: 1,
-		24*time.Minute + 30*time.Second: 0,
+		29 * time.Second:                1471,
+		30 * time.Second:                1470,
+		24*time.Minute + 29*time.Second: 31,
+		24*time.Minute + 30*time.Second: 30,
 	}
 
 	for duration, expected := range cases {
 		p.StartTime = timeFunc().Add(-duration)
-		assert.Equal(t, expected, p.RemainingMinutes())
+		assert.Equal(t, expected, p.RemainingSeconds())
 	}
 
 	p.StartTime = timeFunc().Add(-(10*time.Minute + 29*time.Second))
 	p.PauseTime = timeFunc()
 
-	assert.Equal(t, 15, p.RemainingMinutes())
+	assert.Equal(t, 871, p.RemainingSeconds())
 
 	p.PauseTime = time.Time{}
 }

@@ -3,10 +3,12 @@ package openpomodoro
 import (
 	"bytes"
 	"encoding/json"
-	"math"
+	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
-	"github.com/justincampbell/go-logfmt"
+	"github.com/go-logfmt/logfmt"
 )
 
 const (
@@ -26,28 +28,31 @@ type Pomodoro struct {
 	StartTime time.Time `json:"start_time"`
 
 	// Description is a description of the Pomodoro.
-	Description string `logfmt:"description" json:"description"`
+	Description string `json:"description"`
 
 	// Duration is the length of the Pomodoro.
-	Duration time.Duration `logfmt:"duration,m" json:"-"`
+	Duration time.Duration `json:"-"`
 	// JSONDuration is a placeholder for MarshalJSON to convert and store the
-	// duration in minutes.
-	JSONDuration int `json:"duration"`
+	// duration in the format XXmXXs.
+	JSONDuration string `json:"duration"`
 
 	// PauseTime is the time the Pomodoro paused.
 	PauseTime time.Time `json:"-"`
 	// JSONPauseTime is a placeholder for MarshalJSON to convert and store the
 	// time as a string.
-	JSONPauseTime string `logfmt:"pause_time,omitempty" json:"pause_time,omitempty"`
+	JSONPauseTime string `json:"pause_time,omitempty"`
 
 	// PauseDuration is the length of the Pause.
-	PauseDuration time.Duration `logfmt:"pause_duration,m" json:"-"`
+	PauseDuration time.Duration `json:"-"`
 	// JSONDuration is a placeholder for MarshalJSON to convert and store the
-	// duration in minutes.
-	JSONPauseDuration int `json:"pause_duration,omitempty"`
+	// duration in the format XXmXXs.
+	JSONPauseDuration string `json:"pause_duration,omitempty"`
+
+	// IsBreak is the status if a Pomodoro is a break timer
+	IsBreak bool `json:"is_break,omitempty"`
 
 	// Tags are the list of tags for this Pomodoro.
-	Tags []string `logfmt:"tags" json:"tags"`
+	Tags []string `json:"tags"`
 }
 
 // NewPomodoro returns a Pomodoro with defaults set.
@@ -79,8 +84,13 @@ func (p Pomodoro) MarshalJSON() ([]byte, error) {
 	// This is required so that json.Marshal ignores that we also implement
 	// encoding.TextMarshaler via MarshalText.
 	type alias Pomodoro
-	p.JSONDuration = p.DurationMinutes()
-	p.JSONPauseDuration = int(p.PauseDuration.Minutes())
+	p.JSONDuration = p.Duration.String()
+
+	if p.PauseDuration > 0 {
+		p.JSONPauseDuration = p.PauseDuration.String()
+	} else {
+		p.JSONPauseDuration = ""
+	}
 
 	if !p.PauseTime.IsZero() {
 		p.JSONPauseTime = p.PauseTime.Format(TimeFormat)
@@ -102,10 +112,48 @@ func (p Pomodoro) MarshalText() ([]byte, error) {
 		p.JSONPauseTime = ""
 	}
 
-	attributes, err := logfmt.Encode(p)
-	if err != nil {
+	var buf bytes.Buffer
+	enc := logfmt.NewEncoder(&buf)
+
+	if p.Description != "" {
+		if err := enc.EncodeKeyval("description", p.Description); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := enc.EncodeKeyval("duration", p.Duration.String()); err != nil {
 		return nil, err
 	}
+
+	if p.JSONPauseTime != "" {
+		if err := enc.EncodeKeyval("pause_time", p.JSONPauseTime); err != nil {
+			return nil, err
+		}
+	}
+
+	if p.PauseDuration > 0 {
+		if err := enc.EncodeKeyval("pause_duration", p.PauseDuration.String()); err != nil {
+			return nil, err
+		}
+	}
+
+	if p.IsBreak {
+		if err := enc.EncodeKeyval("is_break", strconv.FormatBool(p.IsBreak)); err != nil {
+			return nil, err
+		}
+	}
+
+	if len(p.Tags) > 0 {
+		if err := enc.EncodeKeyval("tags", strings.Join(p.Tags, ",")); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := enc.EndRecord(); err != nil {
+		return nil, err
+	}
+
+	attributes := bytes.TrimRight(buf.Bytes(), "\n")
 
 	return bytes.Join([][]byte{timestamp, attributes}, charSpace), nil
 }
@@ -145,9 +193,51 @@ func (p *Pomodoro) UnmarshalText(b []byte) error {
 
 	p.StartTime = startTime
 
-	err = logfmt.Unmarshal(attributes, p)
-	if err != nil {
-		return err
+	if len(attributes) > 0 {
+		dec := logfmt.NewDecoder(bytes.NewReader(attributes))
+		recordCount := 0
+		for dec.ScanRecord() {
+			recordCount++
+			if recordCount > 1 {
+				return fmt.Errorf("unexpected multiple lines in pomodoro attributes")
+			}
+			for dec.ScanKeyval() {
+				key := string(dec.Key())
+				val := string(dec.Value())
+
+				switch key {
+				case "description":
+					p.Description = val
+				case "duration":
+					dur, err := time.ParseDuration(val)
+					if err != nil {
+						return err
+					}
+					p.Duration = dur
+				case "pause_time":
+					p.JSONPauseTime = val
+				case "pause_duration":
+					dur, err := time.ParseDuration(val)
+					if err != nil {
+						return err
+					}
+					p.PauseDuration = dur
+				case "is_break":
+					bre, err := strconv.ParseBool(val)
+					if err != nil {
+						return err
+					}
+					p.IsBreak = bre
+				case "tags":
+					if val != "" {
+						p.Tags = strings.Split(val, ",")
+					}
+				}
+			}
+		}
+		if err := dec.Err(); err != nil {
+			return err
+		}
 	}
 
 	if p.JSONPauseTime != "" {
@@ -165,18 +255,24 @@ func (p *Pomodoro) UnmarshalText(b []byte) error {
 // ApplySettings sets the Pomodoro's defaults from settings if they are
 // considered to be missing.
 func (p *Pomodoro) ApplySettings(s *Settings) {
-	if p.Duration == 0 {
-		p.Duration = s.DefaultPomodoroDuration
-	}
+	if p.IsBreak {
+		if p.Duration == 0 {
+			p.Duration = s.DefaultBreakDuration
+		}
+	} else {
+		if p.Duration == 0 {
+			p.Duration = s.DefaultPomodoroDuration
+		}
 
-	if len(p.Tags) == 0 {
-		p.Tags = s.DefaultTags
+		if len(p.Tags) == 0 {
+			p.Tags = s.DefaultTags
+		}
 	}
 }
 
-// DurationMinutes returns the Pomodoro's duration in minutes.
-func (p *Pomodoro) DurationMinutes() int {
-	return round(p.Duration.Minutes())
+// DurationSeconds returns the Pomodoro's duration in seconds.
+func (p *Pomodoro) DurationSeconds() int {
+	return int(p.Duration.Round(time.Second).Seconds())
 }
 
 // EndTime returns the time the Pomodoro would end.
@@ -195,7 +291,7 @@ func (p *Pomodoro) IsDone() bool {
 	if p.IsInactive() || p.IsPaused() {
 		return false
 	}
-	return timeFunc().After(p.EndTime())
+	return !timeFunc().Before(p.EndTime())
 }
 
 // IsInactive returns whether or not a Pomodoro is empty/not set/etc.
@@ -221,18 +317,12 @@ func (p *Pomodoro) Remaining() time.Duration {
 	return p.EndTime().Sub(timeFunc())
 }
 
-// RemainingMinutes returns the remaining duration of the Pomodoro in minutes.
-// Partial minutes are rounded up and down normally, so that there are 25
-// minutes remaining for 30 seconds after the Pomodoro starts, and 0 for 30
-// seconds before it completes.
-func (p *Pomodoro) RemainingMinutes() int {
-	return round(p.Remaining().Minutes())
+// RemainingSeconds returns the remaining duration of the Pomodoro in seconds.
+// Partial seconds are rounded up and down normally
+func (p *Pomodoro) RemainingSeconds() int {
+	return int(p.Remaining().Round(time.Second).Seconds())
 }
 
 func bytesAllWhitespace(b []byte) bool {
 	return len(bytes.TrimSpace(b)) == 0
-}
-
-func round(f float64) int {
-	return int(math.Floor(f + 0.5))
 }

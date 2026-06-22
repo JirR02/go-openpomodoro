@@ -39,7 +39,7 @@ func TestHistory_MarshalJSON(t *testing.T) {
 	b, err := h.MarshalJSON()
 	assert.Nil(t, err)
 	assert.Equal(t,
-		`{"pomodoros":[{"start_time":"2016-06-14T12:00:00Z","description":"A description","duration":25,"tags":["a","b"]}]}`,
+		`{"pomodoros":[{"start_time":"2016-06-14T12:00:00Z","description":"A description","duration":"25m0s","tags":["a","b"]}]}`,
 		string(b))
 }
 
@@ -54,7 +54,7 @@ func TestHistory_MarshalText(t *testing.T) {
 	b, err := h.MarshalText()
 	assert.Nil(t, err)
 	assert.Equal(t,
-		"2016-06-14T12:00:00Z description=\"A description\" duration=25 tags=a,b\n",
+		"2016-06-14T12:00:00Z description=\"A description\" duration=25m0s tags=a,b\n",
 		string(b))
 }
 
